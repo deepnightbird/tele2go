@@ -1,0 +1,14 @@
+# type volume cost
+# type = data or voice or sms
+
+data     1     15
+data     2     30
+data     3     45
+
+#voice       40  50
+#data    45
+
+#voice 57
+#voice 62
+#voice 69
+#voice 74
