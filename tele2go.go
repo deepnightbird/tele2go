@@ -31,6 +31,8 @@ import (
 	genagents "github.com/greentornado/genagents"
 
 	//"github.com/Knetic/govaluate"
+	"io"
+
 	strftime "github.com/itchyny/timefmt-go"
 	"github.com/mattn/go-colorable"
 	"golang.org/x/crypto/ssh/terminal"
@@ -172,7 +174,82 @@ func getTimestamp() int64 {
 	return time.Now().UnixNano() / 1e6
 }
 
-func wget(storage []Storage, offset int, client *HttpClient) {
+func reqst_item(sitem *Storage, cookielist []*http.Cookie, cookie2 *http.Cookie, client *HttpClient) {
+
+	_type := sitem._type
+	_vol := sitem._vol
+	_cost := sitem._cost
+	_depth := sitem._depth
+
+	var subdom string = get_domen()
+	var url string = fmt.Sprintf(
+		"https://%s.tele2.ru/api/exchange/lots?trafficType=%s&volume=%d&cost=%d&offset=0&limit=%d", subdom, _type, _vol, _cost, 2*_depth)
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		do_log(false, "wget", err)
+		time.Sleep(time.Second * time.Duration(1))
+		return
+	}
+	//req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36")
+	req.Header.Set("User-Agent", genagents.GenAgent())
+	req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml")
+	req.Header.Set("Accept-Charset", "ISO-8859-1,utf-8")
+	req.Header.Set("Accept-Encoding", "none")
+	req.Header.Set("Accept-Language", "ru-RU,ru;en-US,en;q=0.8")
+	req.Header.Set("cache-control", "max-age=0")
+	req.Header.Set("referer", "https://"+subdom+".tele2.ru/stock-exchange/internet")
+	req.Header.Set("dnt", "1")
+	req.Header.Set("pragma", "no-cache")
+	req.Header.Set("X-Special-Proxy-Header", RandIP())
+	req.Header.Set("X-Forwarded-For", RandIP())
+	//language=ru-RU;
+	//req.Header.Set("session-cookie", "1778d3ea1fb278ae06f76f4dbeb261f5e4229eacdbe51eccd04f23584d0a080e98104631c81e68bd2467466324fc25c2")
+	//req.Header.Set("JSESSIONID", "_trLft2JUj2lOLZhiGolFiBlWrZt_RVX_vl_m5uKV0nAFfbYd7si!-1602525487")
+	req.AddCookie(cookie2)
+	for c := range cookielist {
+		//req.Header.Set("cookie", "language=ru-RU; session-cookie=1778d3ea1fb278ae06f76f4dbeb261f5e4229eacdbe51eccd04f23584d0a080e98104631c81e68bd2467466324fc25c2; JSESSIONID=_trLft2JUj2lOLZhiGolFiBlWrZt_RVX_vl_m5uKV0nAFfbYd7si!-1602525487")
+		//req.Header.Set(v, c)
+		req.AddCookie(cookielist[c])
+	}
+	//ck := make(http.Cookie)
+
+	//proto = clientlist[proto_idx]
+
+	for i := 0; i < 50; i++ {
+		cur_ts := getTimestamp()
+		delta_time := cur_ts - client.last_accessed
+		if delta_time >= conf.PollIntv {
+			break
+		}
+		//time.Sleep(time.Millisecond * time.Duration(100))
+		time.Sleep(time.Millisecond * time.Duration(10))
+	}
+	// s1 := clientlist[proto_idx].last_accessed.String()
+	resp, err := client.client.Do(req)
+	if err != nil || !strings.Contains(resp.Status, "200") {
+		//fmt.Println(err)
+		//lp = nil
+		do_log(false, "wget", err)
+		time.Sleep(time.Second * time.Duration(1))
+		return
+	}
+	cookielist = resp.Cookies() //save cookies
+	body, err := io.ReadAll(io.Reader(resp.Body))
+	if err != nil {
+		do_log(false, "wget", err)
+		time.Sleep(time.Second * time.Duration(1))
+		return
+	}
+	sitem.readch <- body
+	resp.Body.Close()
+	last_time := client.last_accessed
+	client.last_accessed = getTimestamp()
+	client.last_answer = int(client.last_accessed - last_time)
+	resp = nil
+}
+
+func wget(storage StorageList, offset int, client *HttpClient) {
 	//var clientlist []HttpClient
 
 	var cookielist []*http.Cookie
@@ -180,114 +257,21 @@ func wget(storage []Storage, offset int, client *HttpClient) {
 	cookie2 := &http.Cookie{
 		Name:  "session-cookie",
 		Value: "",
-		/*Language:         "ru-RU",
-		  Session - cookie: "1778d3ea6528a32e06f76f4dbeb261f5cd443f2cc3a5d358876e0885b7c4ef8bed33787c106ae074409f642c895751e3",
-		  User - separator: "part8",
-		  Auth_state:       "NOT_AUTH",*/
-		/*kc_config: "{
-		  \"realm\":\"tele2-b2c\",
-		  \"clientId\":\"digital-suite-web-app\",
-		  \"url\":\"\",
-		  \"updateTimeBeforeExpiration\":60,
-		  \"defaultRefreshInterval\":60,
-		  \"requestSetTokenTimeout\":15,
-		  \"requestSetTokenRetry\":2,
-		  \"requestSetTokenRetryDelay\":2,
-		  \"requestUpdateTokenTimeout\":10,
-		  \"requestUpdateTokenRetry\":8,
-		  \"requestUpdateTokenRetryDelay\":2,
-		  \"cookieDomain\":\".tele2.ru\",
-		  \"isActive\":true,
-		  \"smsCodeLength\":6,
-		  \"migration\":true,
-		  \"skylinkCookieDomain\":\".skylink.ru\"
-		  }",*/
-		/*Test_try:             "{\"6600001\":1}",
-		  csrf - token - name:  "csrftoken",
-		  region:               "300029",
-		  csrf - token - value: "17791009fd406e8b5e179c88c4fa9bdd1ce6b4f78dbff973f34ed416e5f0551f502b115bd0cb29a2",
-		  JSESSIONID:           "wEHPV63r6JbIFSNgl4dyAAdmjAtW4-rATafoXpayRTXiVfxQcqBf!-92228456",*/
 	}
-
-	//var last_time int64 = 0
 
 	for {
 		for idx := 0; idx < len(storage); idx++ {
 
 			idx_ofs := (idx + offset) % len(storage)
 
-			sitem := storage[idx_ofs]
+			sitem := &storage[idx_ofs]
 
-			_type := sitem._type
-			_vol := sitem._vol
-			_cost := sitem._cost
-			_depth := sitem._depth
+			reqst_item(sitem, cookielist, cookie2, client)
 
-			var subdom string = get_domen()
-			var url string = fmt.Sprintf(
-				"https://%s.tele2.ru/api/exchange/lots?trafficType=%s&volume=%d&cost=%d&offset=0&limit=%d", subdom, _type, _vol, _cost, 2*_depth)
-
-			req, err := http.NewRequest("GET", url, nil)
-			if err != nil {
-				do_log(false, "wget", err)
-				time.Sleep(time.Second * time.Duration(1))
-				continue
+			if sitem.prim_fill {
+				sitem.prim_fill = false
+				reqst_item(sitem, cookielist, cookie2, client)
 			}
-			//req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/51.0.2704.103 Safari/537.36")
-			req.Header.Set("User-Agent", genagents.GenAgent())
-			req.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml")
-			req.Header.Set("Accept-Charset", "ISO-8859-1,utf-8")
-			req.Header.Set("Accept-Encoding", "none")
-			req.Header.Set("Accept-Language", "ru-RU,ru;en-US,en;q=0.8")
-			req.Header.Set("cache-control", "max-age=0")
-			req.Header.Set("referer", "https://"+subdom+".tele2.ru/stock-exchange/internet")
-			req.Header.Set("dnt", "1")
-			req.Header.Set("pragma", "no-cache")
-			req.Header.Set("X-Special-Proxy-Header", RandIP())
-			req.Header.Set("X-Forwarded-For", RandIP())
-			//language=ru-RU;
-			//req.Header.Set("session-cookie", "1778d3ea1fb278ae06f76f4dbeb261f5e4229eacdbe51eccd04f23584d0a080e98104631c81e68bd2467466324fc25c2")
-			//req.Header.Set("JSESSIONID", "_trLft2JUj2lOLZhiGolFiBlWrZt_RVX_vl_m5uKV0nAFfbYd7si!-1602525487")
-			req.AddCookie(cookie2)
-			for c := range cookielist {
-				//req.Header.Set("cookie", "language=ru-RU; session-cookie=1778d3ea1fb278ae06f76f4dbeb261f5e4229eacdbe51eccd04f23584d0a080e98104631c81e68bd2467466324fc25c2; JSESSIONID=_trLft2JUj2lOLZhiGolFiBlWrZt_RVX_vl_m5uKV0nAFfbYd7si!-1602525487")
-				//req.Header.Set(v, c)
-				req.AddCookie(cookielist[c])
-			}
-			//ck := make(http.Cookie)
-
-			//proto = clientlist[proto_idx]
-
-			for i := 0; i < 50; i++ {
-				cur_ts := getTimestamp()
-				delta_time := cur_ts - client.last_accessed
-				if delta_time >= conf.PollIntv {
-					break
-				}
-				time.Sleep(time.Millisecond * time.Duration(100))
-			}
-			// s1 := clientlist[proto_idx].last_accessed.String()
-			resp, err := client.client.Do(req)
-			if err != nil || !strings.Contains(resp.Status, "200") {
-				//fmt.Println(err)
-				//lp = nil
-				do_log(false, "wget", err)
-				time.Sleep(time.Second * time.Duration(1))
-				continue
-			}
-			cookielist = resp.Cookies() //save cookies
-			body, err := ioutil.ReadAll(resp.Body)
-			if err != nil {
-				do_log(false, "wget", err)
-				time.Sleep(time.Second * time.Duration(1))
-				continue
-			}
-			sitem.readch <- body
-			resp.Body.Close()
-			last_time := client.last_accessed
-			client.last_accessed = getTimestamp()
-			client.last_answer = int(client.last_accessed - last_time)
-			resp = nil
 			//time.Sleep(time.Millisecond * time.Duration(1000/conf.PollFreq))
 		}
 	}
@@ -1261,9 +1245,9 @@ func main() {
 
 	stdOut = bufio.NewWriter(colorable.NewColorableStdout())
 
-	var storage []Storage
+	var storage StorageList
 	var printdata []PrintItm
-	storage = make([]Storage, 0)
+	storage = make(StorageList, 0)
 	var prm Desc
 
 	rand.Seed(time.Now().UnixNano())
@@ -1343,7 +1327,7 @@ func main() {
 				if err != nil {
 					continue
 				}
-				storage = append(storage, Storage{split[0], v, c, prm.Depth, time.Now(), 0, nil, nil, nil, make(chan []byte)})
+				storage = append(storage, Storage{split[0], v, c, prm.Depth, time.Now(), 0, nil, nil, nil, make(chan []byte), true})
 			}
 		}
 		lots_file.Close()
@@ -1389,7 +1373,7 @@ func main() {
 				os.Exit(1)
 			}
 			for j := cfi; j <= cfti; j++ {
-				storage = append(storage, Storage{param, i, j, prm.Depth, time.Now(), 0, nil, nil, nil, make(chan []byte)})
+				storage = append(storage, Storage{param, i, j, prm.Depth, time.Now(), 0, nil, nil, nil, make(chan []byte), true})
 			}
 		}
 	}

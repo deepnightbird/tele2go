@@ -30,7 +30,10 @@ type Storage struct {
 	sell_history  []Operation
 	moved_history []Operation
 	readch        chan []byte
+	prim_fill     bool
 }
+
+type StorageList []Storage
 
 func (s *Storage) add_buy_history(timestamp time.Time, op_list []OpItem) {
 	s.buy_history = append(s.buy_history, Operation{timestamp, len(op_list), op_list})
